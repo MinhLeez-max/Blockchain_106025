@@ -13,6 +13,9 @@ import ItemCard, {
   type Item
 } from "../components/ItemCard";
 
+import TransactionModal
+  from "../components/TransactionModal";
+
 import {
   MARKETPLACE_ADDRESS,
   MARKETPLACE_ABI
@@ -23,12 +26,29 @@ import {
   findLatestListing
 } from "../blockchain/listingHelpers";
 
+
 type MarketplaceItem =
   Item & {
     active: boolean;
     blockchainPrice?: string;
     blockchainSeller?: string;
   };
+
+
+type ModalType =
+  | "confirm"
+  | "loading"
+  | "success"
+  | "error";
+
+
+type ModalState = {
+  open: boolean;
+  type: ModalType;
+  title: string;
+  message: string;
+};
+
 
 function Marketplace() {
 
@@ -40,15 +60,18 @@ function Marketplace() {
       []
     );
 
+
   const [
     search,
     setSearch
   ] = useState("");
 
+
   const [
     category,
     setCategory
   ] = useState("All");
+
 
   const [
     buyingId,
@@ -58,23 +81,91 @@ function Marketplace() {
       null
     );
 
+
   const [
     currentAccount,
     setCurrentAccount
   ] = useState("");
+
 
   const [
     loading,
     setLoading
   ] = useState(true);
 
+
+  const [
+    pendingItem,
+    setPendingItem
+  ] =
+    useState<MarketplaceItem | null>(
+      null
+    );
+
+
+  const [
+    modal,
+    setModal
+  ] =
+    useState<ModalState>({
+      open: false,
+      type: "confirm",
+      title: "",
+      message: ""
+    });
+
+
+  // =====================================
+  // MODAL HELPER
+  // =====================================
+
+  const showModal = (
+    type: ModalType,
+    title: string,
+    message: string
+  ) => {
+
+    setModal({
+      open: true,
+      type,
+      title,
+      message
+    });
+
+  };
+
+
+  const closeModal =
+    () => {
+
+      if (
+        modal.type === "loading"
+      ) {
+        return;
+      }
+
+      setModal(
+        (current) => ({
+          ...current,
+          open: false
+        })
+      );
+
+      setPendingItem(null);
+
+    };
+
+
   // =====================================
   // LOAD TRANG
   // =====================================
 
   useEffect(() => {
+
     loadMarketplace();
+
   }, []);
+
 
   // =====================================
   // LOAD MARKETPLACE
@@ -87,6 +178,7 @@ function Marketplace() {
 
         setLoading(true);
 
+
         // =================================
         // BACKEND
         // =================================
@@ -96,17 +188,25 @@ function Marketplace() {
             "http://localhost:3000/api/items"
           );
 
+
         if (!response.ok) {
+
           throw new Error(
             "Không thể tải dữ liệu vật phẩm."
           );
+
         }
+
 
         const backendItems:
           Item[] =
           await response.json();
 
-        // Chưa có MetaMask
+
+        // =================================
+        // CHƯA CÓ METAMASK
+        // =================================
+
         if (!window.ethereum) {
 
           const noWalletItems =
@@ -117,12 +217,15 @@ function Marketplace() {
               })
             );
 
+
           setItems(
             noWalletItems
           );
 
           return;
+
         }
+
 
         // =================================
         // BLOCKCHAIN
@@ -133,6 +236,7 @@ function Marketplace() {
             window.ethereum
           );
 
+
         const accounts:
           string[] =
           await provider.send(
@@ -140,15 +244,21 @@ function Marketplace() {
             []
           );
 
+
         if (
           accounts.length > 0
         ) {
+
           setCurrentAccount(
             accounts[0]
           );
+
         } else {
+
           setCurrentAccount("");
+
         }
+
 
         const marketplace =
           new Contract(
@@ -157,17 +267,20 @@ function Marketplace() {
             provider
           );
 
+
         const allListings =
           await loadAllListings(
             marketplace
           );
 
+
         // =================================
-        // GHÉP BACKEND + BLOCKCHAIN
+        // BACKEND + BLOCKCHAIN
         // =================================
 
         const mergedItems:
           MarketplaceItem[] = [];
+
 
         for (
           const item
@@ -180,6 +293,7 @@ function Marketplace() {
               item.tokenId
             );
 
+
           if (!listing) {
 
             mergedItems.push({
@@ -188,9 +302,12 @@ function Marketplace() {
             });
 
             continue;
+
           }
 
+
           mergedItems.push({
+
             ...item,
 
             active:
@@ -214,12 +331,16 @@ function Marketplace() {
 
             listingId:
               listing.listingId
+
           });
+
         }
+
 
         setItems(
           mergedItems
         );
+
 
       } catch (error) {
 
@@ -228,60 +349,73 @@ function Marketplace() {
           error
         );
 
+
       } finally {
 
         setLoading(false);
 
       }
+
     };
 
+
   // =====================================
-  // MUA VẬT PHẨM
+  // YÊU CẦU MUA
   // =====================================
 
-  const buyItem =
+  const requestBuy =
     async (
       item: MarketplaceItem
     ) => {
 
-      try {
+      if (!window.ethereum) {
 
-        if (!window.ethereum) {
-          alert(
-            "Vui lòng cài đặt MetaMask."
-          );
-
-          return;
-        }
-
-        setBuyingId(
-          item.id
+        showModal(
+          "error",
+          "Chưa có MetaMask",
+          "Vui lòng cài đặt MetaMask để thực hiện giao dịch."
         );
+
+        return;
+
+      }
+
+
+      try {
 
         const provider =
           new BrowserProvider(
             window.ethereum
           );
 
+
         const network =
           await provider.getNetwork();
+
 
         if (
           network.chainId !==
           31337n
         ) {
-          alert(
-            "Vui lòng chuyển MetaMask sang mạng Hardhat Local."
+
+          showModal(
+            "error",
+            "Sai mạng blockchain",
+            "Vui lòng chuyển MetaMask sang mạng Hardhat Local (Chain ID 31337)."
           );
 
           return;
+
         }
+
 
         const signer =
           await provider.getSigner();
 
+
         const buyer =
           await signer.getAddress();
+
 
         const marketplace =
           new Contract(
@@ -290,11 +424,15 @@ function Marketplace() {
             signer
           );
 
-        // Đọc lại blockchain trước khi mua
+
+        // Đọc lại blockchain
+        // trước khi hiển thị xác nhận.
+
         const allListings =
           await loadAllListings(
             marketplace
           );
+
 
         const listing =
           findLatestListing(
@@ -302,46 +440,235 @@ function Marketplace() {
             item.tokenId
           );
 
+
         if (!listing) {
-          alert(
-            "Không tìm thấy thông tin đăng bán."
+
+          showModal(
+            "error",
+            "Không tìm thấy listing",
+            "Không tìm thấy thông tin đăng bán của vật phẩm này."
           );
 
           return;
+
         }
 
+
         if (!listing.active) {
-          alert(
-            "Vật phẩm này không còn được bán."
+
+          showModal(
+            "error",
+            "Vật phẩm không còn bán",
+            "Listing này đã được mua hoặc đã bị hủy."
           );
+
 
           await loadMarketplace();
 
           return;
+
         }
+
 
         if (
           listing.seller
             .toLowerCase() ===
           buyer.toLowerCase()
         ) {
-          alert(
+
+          showModal(
+            "error",
+            "Không thể mua",
             "Bạn không thể mua vật phẩm của chính mình."
           );
 
           return;
+
         }
 
-        const confirmed =
-          window.confirm(
-            `Bạn muốn mua "${item.name}" với giá ${formatEther(
+
+        setPendingItem({
+          ...item,
+
+          listingId:
+            listing.listingId,
+
+          price:
+            formatEther(
               listing.price
-            )} ETH?`
+            ),
+
+          blockchainPrice:
+            formatEther(
+              listing.price
+            ),
+
+          blockchainSeller:
+            listing.seller,
+
+          seller:
+            listing.seller,
+
+          active:
+            listing.active
+        });
+
+
+        showModal(
+          "confirm",
+          "Xác nhận mua NFT",
+          `Bạn muốn mua "${item.name}" với giá ${formatEther(
+            listing.price
+          )} ETH?`
+        );
+
+
+      } catch (error) {
+
+        console.error(
+          "Lỗi kiểm tra giao dịch:",
+          error
+        );
+
+
+        showModal(
+          "error",
+          "Không thể kiểm tra giao dịch",
+          "Đã xảy ra lỗi khi đọc dữ liệu blockchain."
+        );
+
+      }
+
+    };
+
+
+  // =====================================
+  // XÁC NHẬN MUA
+  // =====================================
+
+  const confirmBuy =
+    async () => {
+
+      if (
+        !pendingItem ||
+        !window.ethereum
+      ) {
+        return;
+      }
+
+
+      try {
+
+        setBuyingId(
+          pendingItem.id
+        );
+
+
+        showModal(
+          "loading",
+          "Đang chờ MetaMask",
+          "Vui lòng xác nhận giao dịch mua NFT trong MetaMask."
+        );
+
+
+        const provider =
+          new BrowserProvider(
+            window.ethereum
           );
 
-        if (!confirmed) {
+
+        const network =
+          await provider.getNetwork();
+
+
+        if (
+          network.chainId !==
+          31337n
+        ) {
+
+          showModal(
+            "error",
+            "Sai mạng blockchain",
+            "Vui lòng chuyển MetaMask sang Hardhat Local (Chain ID 31337)."
+          );
+
           return;
+
         }
+
+
+        const signer =
+          await provider.getSigner();
+
+
+        const buyer =
+          await signer.getAddress();
+
+
+        const marketplace =
+          new Contract(
+            MARKETPLACE_ADDRESS,
+            MARKETPLACE_ABI,
+            signer
+          );
+
+
+        // =================================
+        // KIỂM TRA LẠI LẦN CUỐI
+        // =================================
+
+        const allListings =
+          await loadAllListings(
+            marketplace
+          );
+
+
+        const listing =
+          findLatestListing(
+            allListings,
+            pendingItem.tokenId
+          );
+
+
+        if (
+          !listing ||
+          !listing.active
+        ) {
+
+          showModal(
+            "error",
+            "Giao dịch không thể thực hiện",
+            "Vật phẩm này không còn được đăng bán."
+          );
+
+
+          await loadMarketplace();
+
+          return;
+
+        }
+
+
+        if (
+          listing.seller
+            .toLowerCase() ===
+          buyer.toLowerCase()
+        ) {
+
+          showModal(
+            "error",
+            "Không thể mua",
+            "Bạn không thể mua vật phẩm của chính mình."
+          );
+
+          return;
+
+        }
+
+
+        // =================================
+        // SEND TRANSACTION
+        // =================================
 
         const tx =
           await marketplace.buyItem(
@@ -352,18 +679,38 @@ function Marketplace() {
             }
           );
 
+
         console.log(
           "Buy transaction:",
           tx.hash
         );
 
-        await tx.wait();
 
-        alert(
-          `Mua "${item.name}" thành công!`
+        showModal(
+          "loading",
+          "Đang xử lý giao dịch",
+          "Giao dịch đã được gửi. Đang chờ blockchain xác nhận..."
         );
 
+
+        await tx.wait();
+
+
+        // =================================
+        // SUCCESS
+        // =================================
+
+        showModal(
+          "success",
+          "Mua NFT thành công!",
+          `Bạn đã mua "${pendingItem.name}" với giá ${formatEther(
+            listing.price
+          )} ETH. Token #${pendingItem.tokenId} hiện thuộc sở hữu của bạn.`
+        );
+
+
         await loadMarketplace();
+
 
       } catch (error: any) {
 
@@ -372,25 +719,37 @@ function Marketplace() {
           error
         );
 
+
         if (
           error?.code ===
           "ACTION_REJECTED"
         ) {
-          alert(
-            "Bạn đã từ chối giao dịch."
+
+          showModal(
+            "error",
+            "Đã hủy giao dịch",
+            "Bạn đã từ chối giao dịch trong MetaMask."
           );
+
         } else {
-          alert(
-            "Giao dịch thất bại. Vui lòng kiểm tra Console."
+
+          showModal(
+            "error",
+            "Giao dịch thất bại",
+            "Không thể hoàn tất giao dịch. Vui lòng kiểm tra ví MetaMask và Console."
           );
+
         }
+
 
       } finally {
 
         setBuyingId(null);
 
       }
+
     };
+
 
   // =====================================
   // FILTER
@@ -408,83 +767,301 @@ function Marketplace() {
                 .toLowerCase()
             );
 
+
         const matchCategory =
           category === "All" ||
           item.category ===
             category;
 
+
         return (
           matchSearch &&
           matchCategory
         );
+
       }
     );
 
+
   const categoryButtons = [
+
     {
       value: "All",
       label: "Tất cả"
     },
+
     {
       value: "Weapon",
       label: "Vũ khí"
     },
+
     {
       value: "Armor",
       label: "Trang bị"
     },
+
     {
       value: "Skin",
       label: "Skin"
     },
+
     {
       value: "Other",
       label: "Khác"
     }
+
   ];
+
 
   // =====================================
   // UI
   // =====================================
 
   return (
+
     <>
 
-      <section className="hero">
+      {/* ================================= */}
+{/* HERO V2 */}
+{/* ================================= */}
 
-        <div className="hero-content">
+<section className="hero hero-v2">
 
-          <div className="hero-badge">
-            CHỢ VẬT PHẨM BLOCKCHAIN
-          </div>
+  {/* BACKGROUND EFFECTS */}
 
-          <h1>
-            Sưu tầm. Giao dịch.
-            <br />
+  <div className="hero-grid"></div>
 
-            <span>
-              Thực sự sở hữu.
-            </span>
-          </h1>
+  <div className="hero-glow hero-glow-one"></div>
+  <div className="hero-glow hero-glow-two"></div>
 
-          <p>
-            Tạo, mua và giao dịch các
-            vật phẩm game dưới dạng NFT
-            một cách minh bạch trên
-            blockchain.
-          </p>
+  <div className="hero-particle particle-one"></div>
+  <div className="hero-particle particle-two"></div>
+  <div className="hero-particle particle-three"></div>
+  <div className="hero-particle particle-four"></div>
 
-          <a href="#marketplace">
-            Khám phá chợ vật phẩm
-          </a>
 
+  {/* ================================= */}
+  {/* LEFT CONTENT */}
+  {/* ================================= */}
+
+  <div className="hero-content hero-content-v2">
+
+    <div className="hero-badge hero-badge-v2">
+
+      <span className="hero-badge-dot"></span>
+
+      CHỢ VẬT PHẨM BLOCKCHAIN
+
+    </div>
+
+
+    <h1 className="hero-title-v2">
+
+      <span className="hero-title-white">
+        Sưu tầm. Giao dịch.
+      </span>
+
+      <br />
+
+      <span className="hero-gradient-text">
+        Thực sự sở hữu.
+      </span>
+
+    </h1>
+
+
+    <p className="hero-description-v2">
+
+      Tạo, mua và giao dịch các vật phẩm
+      game dưới dạng NFT một cách minh bạch,
+      an toàn và xác minh trực tiếp trên
+      blockchain.
+
+    </p>
+
+
+    {/* BUTTONS */}
+
+    <div className="hero-actions">
+
+      <a
+        href="#marketplace"
+        className="hero-primary-button"
+      >
+
+        <span>
+          Khám phá Marketplace
+        </span>
+
+        <span className="hero-button-arrow">
+          →
+        </span>
+
+      </a>
+
+
+      <a
+        href="/sell"
+        className="hero-secondary-button"
+      >
+
+        <span>
+          ＋
+        </span>
+
+        Tạo NFT
+
+      </a>
+
+    </div>
+
+
+    {/* FEATURES */}
+
+    <div className="hero-features">
+
+      <div className="hero-feature">
+
+        <div className="hero-feature-icon">
+          ◈
         </div>
 
-        <div className="hero-art">
-          ⚔️
+        <div>
+          <strong>
+            ERC-721
+          </strong>
+
+          <span>
+            NFT Standard
+          </span>
         </div>
 
-      </section>
+      </div>
+
+
+      <div className="hero-feature">
+
+        <div className="hero-feature-icon">
+          ◉
+        </div>
+
+        <div>
+          <strong>
+            Blockchain
+          </strong>
+
+          <span>
+            Minh bạch
+          </span>
+        </div>
+
+      </div>
+
+
+      <div className="hero-feature">
+
+        <div className="hero-feature-icon">
+          ◆
+        </div>
+
+        <div>
+          <strong>
+            MetaMask
+          </strong>
+
+          <span>
+            Giao dịch an toàn
+          </span>
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+
+  {/* ================================= */}
+  {/* RIGHT ART */}
+  {/* ================================= */}
+
+  <div className="hero-visual">
+
+    <div className="hero-visual-glow"></div>
+
+
+    <div className="hero-orbit orbit-one"></div>
+
+    <div className="hero-orbit orbit-two"></div>
+
+
+    <div className="hero-orbit-dot orbit-dot-one"></div>
+
+    <div className="hero-orbit-dot orbit-dot-two"></div>
+
+
+    <div className="hero-sword-card">
+
+      <div className="hero-card-shine"></div>
+
+
+      <div className="hero-art hero-art-v2">
+        ⚔️
+      </div>
+
+
+      <div className="hero-art-label">
+
+        <span className="hero-live-dot"></span>
+
+        NFT MARKETPLACE
+
+      </div>
+
+    </div>
+
+
+    <div className="hero-floating-card hero-floating-top">
+
+      <span>
+        ◈
+      </span>
+
+      <div>
+        <small>
+          CHUẨN NFT
+        </small>
+
+        <strong>
+          ERC-721
+        </strong>
+      </div>
+
+    </div>
+
+
+    <div className="hero-floating-card hero-floating-bottom">
+
+      <span>
+        ✓
+      </span>
+
+      <div>
+        <small>
+          QUYỀN SỞ HỮU
+        </small>
+
+        <strong>
+          On-chain
+        </strong>
+      </div>
+
+    </div>
+
+  </div>
+
+</section>
+
 
       <section
         className="market-section"
@@ -505,11 +1082,17 @@ function Marketplace() {
 
           </div>
 
+
           <div className="item-count">
-            {filteredItems.length} VẬT PHẨM
+
+            {filteredItems.length}
+            {" "}
+            VẬT PHẨM
+
           </div>
 
         </div>
+
 
         <div className="filters">
 
@@ -524,6 +1107,7 @@ function Marketplace() {
             }
           />
 
+
           <div className="categories">
 
             {categoryButtons.map(
@@ -533,21 +1117,21 @@ function Marketplace() {
                   key={
                     button.value
                   }
-
                   className={
                     category ===
                     button.value
                       ? "active-category"
                       : ""
                   }
-
                   onClick={() =>
                     setCategory(
                       button.value
                     )
                   }
                 >
+
                   {button.label}
+
                 </button>
 
               )
@@ -557,21 +1141,29 @@ function Marketplace() {
 
         </div>
 
+
         {loading ? (
 
           <div className="empty-state">
-            <div>⏳</div>
+
+            <div>
+              ⏳
+            </div>
 
             <h2>
               Đang tải vật phẩm...
             </h2>
+
           </div>
 
-        ) : filteredItems.length === 0 ? (
+        ) : filteredItems.length ===
+          0 ? (
 
           <div className="empty-state">
 
-            <div>🎮</div>
+            <div>
+              🎮
+            </div>
 
             <h2>
               Chưa có vật phẩm nào
@@ -597,6 +1189,7 @@ function Marketplace() {
                   item.seller ||
                   "";
 
+
                 const isSeller =
                   Boolean(
                     currentAccount &&
@@ -607,7 +1200,9 @@ function Marketplace() {
                       .toLowerCase()
                   );
 
+
                 return (
+
                   <ItemCard
                     key={item.id}
                     item={item}
@@ -622,10 +1217,14 @@ function Marketplace() {
                       isSeller
                     }
                     onBuy={() =>
-                      buyItem(item)
+                      requestBuy(
+                        item
+                      )
                     }
                   />
+
                 );
+
               }
             )}
 
@@ -635,8 +1234,39 @@ function Marketplace() {
 
       </section>
 
+
+      {/* ================================= */}
+      {/* TRANSACTION MODAL */}
+      {/* ================================= */}
+
+      <TransactionModal
+        open={
+          modal.open
+        }
+        type={
+          modal.type
+        }
+        title={
+          modal.title
+        }
+        message={
+          modal.message
+        }
+        confirmText="Xác nhận mua"
+        cancelText="Hủy"
+        onConfirm={
+          confirmBuy
+        }
+        onClose={
+          closeModal
+        }
+      />
+
     </>
+
   );
+
 }
+
 
 export default Marketplace;

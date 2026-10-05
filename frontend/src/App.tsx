@@ -13,6 +13,9 @@ import {
   Route
 } from "react-router-dom";
 
+import Dashboard from "./pages/Dashboard";
+import Wishlist from "./pages/Wishlist";
+import ItemDetail from "./pages/ItemDetail";
 import Navbar from "./components/Navbar";
 import Marketplace from "./pages/Marketplace";
 import MyItems from "./pages/MyItems";
@@ -207,7 +210,24 @@ function App() {
             <Marketplace />
           }
         />
-
+        <Route
+  path="/item/:tokenId"
+  element={
+    <ItemDetail />
+  }
+/>
+<Route
+  path="/wishlist"
+  element={
+    <Wishlist />
+  }
+/>
+<Route
+  path="/dashboard"
+  element={
+    <Dashboard />
+  }
+/>
         <Route
           path="/my-items"
           element={

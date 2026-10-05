@@ -1,140 +1,312 @@
-const express = require("express");
-const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
+const express =
+  require("express");
 
-const router = express.Router();
+const multer =
+  require("multer");
 
-// =====================================
-// THƯ MỤC UPLOAD
-// =====================================
+const path =
+  require("path");
 
-const uploadDirectory = path.join(
-  __dirname,
-  "../uploads"
-);
+const fs =
+  require("fs");
 
-if (!fs.existsSync(uploadDirectory)) {
-  fs.mkdirSync(uploadDirectory, {
-    recursive: true
-  });
-}
+const router =
+  express.Router();
 
-// =====================================
-// CẤU HÌNH UPLOAD ẢNH
-// =====================================
 
-const storage = multer.diskStorage({
-  destination: function (
-    req,
-    file,
-    cb
-  ) {
-    cb(null, uploadDirectory);
-  },
+// ==========================================
+// ĐƯỜNG DẪN DATA
+// ==========================================
 
-  filename: function (
-    req,
-    file,
-    cb
-  ) {
-    const extension =
-      path.extname(file.originalname);
-
-    const uniqueName =
-      Date.now() +
-      "-" +
-      Math.round(
-        Math.random() * 1e9
-      ) +
-      extension;
-
-    cb(null, uniqueName);
-  }
-});
-
-const upload = multer({
-  storage,
-
-  limits: {
-    fileSize: 5 * 1024 * 1024
-  },
-
-  fileFilter: function (
-    req,
-    file,
-    cb
-  ) {
-    const allowedTypes = [
-      "image/jpeg",
-      "image/png",
-      "image/webp"
-    ];
-
-    if (
-      allowedTypes.includes(
-        file.mimetype
-      )
-    ) {
-      cb(null, true);
-    } else {
-      cb(
-        new Error(
-          "Chỉ cho phép ảnh JPG, PNG hoặc WEBP"
-        )
-      );
-    }
-  }
-});
-
-// =====================================
-// DỮ LIỆU ĐỘNG
-// =====================================
-
-// Không còn 9 vật phẩm mẫu.
-// Vật phẩm sẽ được thêm khi người dùng
-// tạo NFT và đăng bán trên giao diện.
-
-let items = [];
-
-// =====================================
-// GET TẤT CẢ VẬT PHẨM
-// =====================================
-
-router.get("/", (req, res) => {
-  res.json(items);
-});
-
-// =====================================
-// GET VẬT PHẨM THEO ID
-// =====================================
-
-router.get("/:id", (req, res) => {
-  const id = Number(req.params.id);
-
-  const item = items.find(
-    (item) => item.id === id
+const dataDirectory =
+  path.join(
+    __dirname,
+    "../data"
   );
 
-  if (!item) {
-    return res.status(404).json({
-      message:
-        "Không tìm thấy vật phẩm"
-    });
+const dataFile =
+  path.join(
+    dataDirectory,
+    "items.json"
+  );
+
+
+// ==========================================
+// TẠO DATA NẾU CHƯA CÓ
+// ==========================================
+
+if (
+  !fs.existsSync(
+    dataDirectory
+  )
+) {
+  fs.mkdirSync(
+    dataDirectory,
+    {
+      recursive: true
+    }
+  );
+}
+
+if (
+  !fs.existsSync(
+    dataFile
+  )
+) {
+  fs.writeFileSync(
+    dataFile,
+    "[]",
+    "utf8"
+  );
+}
+
+
+// ==========================================
+// ĐỌC ITEMS
+// ==========================================
+
+function loadItems() {
+
+  try {
+
+    const data =
+      fs.readFileSync(
+        dataFile,
+        "utf8"
+      );
+
+    if (!data.trim()) {
+      return [];
+    }
+
+    return JSON.parse(
+      data
+    );
+
+  } catch (error) {
+
+    console.error(
+      "Lỗi đọc items.json:",
+      error
+    );
+
+    return [];
   }
+}
 
-  res.json(item);
-});
 
-// =====================================
-// TẠO VẬT PHẨM
-// =====================================
+// ==========================================
+// LƯU ITEMS
+// ==========================================
+
+function saveItems(
+  items
+) {
+
+  fs.writeFileSync(
+    dataFile,
+    JSON.stringify(
+      items,
+      null,
+      2
+    ),
+    "utf8"
+  );
+}
+
+
+// ==========================================
+// MULTER
+// ==========================================
+
+const storage =
+  multer.diskStorage({
+
+    destination:
+      function (
+        req,
+        file,
+        cb
+      ) {
+
+        const uploadDirectory =
+          path.join(
+            __dirname,
+            "../uploads"
+          );
+
+        if (
+          !fs.existsSync(
+            uploadDirectory
+          )
+        ) {
+          fs.mkdirSync(
+            uploadDirectory,
+            {
+              recursive: true
+            }
+          );
+        }
+
+        cb(
+          null,
+          uploadDirectory
+        );
+      },
+
+    filename:
+      function (
+        req,
+        file,
+        cb
+      ) {
+
+        const uniqueName =
+          Date.now() +
+          "-" +
+          Math.round(
+            Math.random() *
+            1e9
+          );
+
+        cb(
+          null,
+          uniqueName +
+          path.extname(
+            file.originalname
+          )
+        );
+      }
+  });
+
+
+const upload =
+  multer({
+    storage,
+
+    limits: {
+      fileSize:
+        5 * 1024 * 1024
+    },
+
+    fileFilter:
+      (
+        req,
+        file,
+        cb
+      ) => {
+
+        const allowedTypes = [
+          "image/jpeg",
+          "image/png",
+          "image/webp"
+        ];
+
+        if (
+          allowedTypes.includes(
+            file.mimetype
+          )
+        ) {
+
+          cb(
+            null,
+            true
+          );
+
+        } else {
+
+          cb(
+            new Error(
+              "Chỉ chấp nhận JPG, PNG hoặc WEBP."
+            )
+          );
+        }
+      }
+  });
+
+
+// ==========================================
+// GET ALL ITEMS
+// ==========================================
+
+router.get(
+  "/",
+  (
+    req,
+    res
+  ) => {
+
+    const items =
+      loadItems();
+
+    res.json(
+      items
+    );
+  }
+);
+
+
+// ==========================================
+// GET ITEM THEO TOKEN ID
+// ==========================================
+
+router.get(
+  "/token/:tokenId",
+  (
+    req,
+    res
+  ) => {
+
+    const items =
+      loadItems();
+
+    const tokenId =
+      Number(
+        req.params.tokenId
+      );
+
+    const item =
+      items.find(
+        (item) =>
+          Number(
+            item.tokenId
+          ) === tokenId
+      );
+
+    if (!item) {
+
+      return res
+        .status(404)
+        .json({
+          message:
+            "Không tìm thấy vật phẩm."
+        });
+    }
+
+    res.json(
+      item
+    );
+  }
+);
+
+
+// ==========================================
+// POST - TẠO ITEM
+// ==========================================
 
 router.post(
   "/",
-  upload.single("image"),
-  (req, res) => {
+  upload.single(
+    "image"
+  ),
+
+  (
+    req,
+    res
+  ) => {
+
     try {
+
       const {
         name,
         description,
@@ -145,9 +317,10 @@ router.post(
         seller
       } = req.body;
 
-      // =================================
+
+      // ====================================
       // VALIDATE
-      // =================================
+      // ====================================
 
       if (
         !name ||
@@ -158,191 +331,325 @@ router.post(
         !tokenId ||
         !seller
       ) {
-        return res.status(400).json({
-          message:
-            "Vui lòng nhập đầy đủ thông tin"
-        });
+
+        if (
+          req.file
+        ) {
+          fs.unlinkSync(
+            req.file.path
+          );
+        }
+
+        return res
+          .status(400)
+          .json({
+            message:
+              "Thiếu thông tin vật phẩm."
+          });
       }
+
 
       if (!req.file) {
-        return res.status(400).json({
-          message:
-            "Vui lòng chọn hình ảnh vật phẩm"
-        });
+
+        return res
+          .status(400)
+          .json({
+            message:
+              "Vui lòng chọn hình ảnh."
+          });
       }
 
-      // Không cho metadata trùng token
-      const existingToken =
+
+      const items =
+        loadItems();
+
+
+      // ====================================
+      // TOKEN ĐÃ TỒN TẠI?
+      // ====================================
+
+      const existingItem =
         items.find(
           (item) =>
-            item.tokenId ===
-            Number(tokenId)
+            Number(
+              item.tokenId
+            ) ===
+            Number(
+              tokenId
+            )
         );
 
-      if (existingToken) {
-        return res.status(409).json({
-          message:
-            `Token #${tokenId} đã tồn tại`
-        });
+
+      if (
+        existingItem
+      ) {
+
+        fs.unlinkSync(
+          req.file.path
+        );
+
+        return res
+          .status(409)
+          .json({
+            message:
+              `Token #${tokenId} đã tồn tại.`
+          });
       }
 
-      // =================================
-      // TẠO ID BACKEND
-      // =================================
 
-      const newId =
-        items.length > 0
-          ? Math.max(
-              ...items.map(
-                (item) => item.id
-              )
-            ) + 1
-          : 1;
-
-      // =================================
-      // URL ẢNH
-      // =================================
-
-      const imageUrl =
-        `http://localhost:3000/uploads/${req.file.filename}`;
-
-      // =================================
-      // VẬT PHẨM MỚI
-      // =================================
+      // ====================================
+      // ITEM MỚI
+      // ====================================
 
       const newItem = {
-        id: newId,
 
-        name:
-          name.trim(),
+        id:
+          Date.now(),
 
-        description:
-          description.trim(),
+        name,
+
+        description,
 
         category,
 
         rarity,
 
-        price,
-
-        image:
-          imageUrl,
+        price:
+          Number(
+            price
+          ),
 
         tokenId:
-          Number(tokenId),
+          Number(
+            tokenId
+          ),
 
-        seller
+        seller,
+
+        image:
+          `http://localhost:3000/uploads/${req.file.filename}`,
+
+        createdAt:
+          new Date()
+            .toISOString()
       };
 
-      items.push(newItem);
 
-      console.log("");
-      console.log(
-        "=============================="
+      items.push(
+        newItem
       );
 
-      console.log(
-        "VẬT PHẨM MỚI"
+
+      // ====================================
+      // GHI RA FILE
+      // ====================================
+
+      saveItems(
+        items
       );
 
-      console.log(
-        "=============================="
-      );
 
       console.log(
-        "Tên:",
-        newItem.name
+        `Đã lưu Token #${newItem.tokenId} vào items.json`
       );
 
-      console.log(
-        "Token:",
-        newItem.tokenId
-      );
-
-      console.log(
-        "Người bán:",
-        newItem.seller
-      );
-
-      console.log(
-        "Giá:",
-        newItem.price,
-        "ETH"
-      );
 
       res
         .status(201)
-        .json(newItem);
+        .json(
+          newItem
+        );
 
     } catch (error) {
+
       console.error(
         "Lỗi tạo vật phẩm:",
         error
       );
 
-      res.status(500).json({
-        message:
-          "Không thể tạo vật phẩm"
-      });
+      res
+        .status(500)
+        .json({
+          message:
+            "Không thể tạo vật phẩm."
+        });
     }
   }
 );
 
-// =====================================
-// DELETE
-// =====================================
 
-router.delete("/:id", (req, res) => {
-  const id = Number(req.params.id);
+// ==========================================
+// DELETE ITEM
+// ==========================================
 
-  const item = items.find(
-    (item) => item.id === id
-  );
+router.delete(
+  "/:id",
+  (
+    req,
+    res
+  ) => {
 
-  if (!item) {
-    return res.status(404).json({
-      message:
-        "Không tìm thấy vật phẩm"
-    });
+    try {
+
+      const id =
+        Number(
+          req.params.id
+        );
+
+      let items =
+        loadItems();
+
+      const item =
+        items.find(
+          (item) =>
+            Number(
+              item.id
+            ) === id
+        );
+
+
+      if (!item) {
+
+        return res
+          .status(404)
+          .json({
+            message:
+              "Không tìm thấy vật phẩm."
+          });
+      }
+
+
+      items =
+        items.filter(
+          (item) =>
+            Number(
+              item.id
+            ) !== id
+        );
+
+
+      saveItems(
+        items
+      );
+
+
+      // ====================================
+      // XÓA ẢNH
+      // ====================================
+
+      if (
+        item.image
+      ) {
+
+        try {
+
+          const filename =
+            path.basename(
+              item.image
+            );
+
+          const imagePath =
+            path.join(
+              __dirname,
+              "../uploads",
+              filename
+            );
+
+
+          if (
+            fs.existsSync(
+              imagePath
+            )
+          ) {
+
+            fs.unlinkSync(
+              imagePath
+            );
+          }
+
+        } catch (
+          imageError
+        ) {
+
+          console.error(
+            "Không thể xóa ảnh:",
+            imageError
+          );
+
+        }
+      }
+
+
+      res.json({
+        message:
+          "Đã xóa vật phẩm."
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Lỗi xóa vật phẩm:",
+        error
+      );
+
+      res
+        .status(500)
+        .json({
+          message:
+            "Không thể xóa vật phẩm."
+        });
+    }
   }
+);
 
-  items = items.filter(
-    (item) => item.id !== id
-  );
 
-  res.json({
-    message:
-      "Đã xóa vật phẩm"
-  });
-});
-
-// =====================================
-// XỬ LÝ LỖI UPLOAD
-// =====================================
+// ==========================================
+// MULTER ERROR
+// ==========================================
 
 router.use(
-  (error, req, res, next) => {
+  (
+    error,
+    req,
+    res,
+    next
+  ) => {
+
     if (
       error instanceof
       multer.MulterError
     ) {
-      return res.status(400).json({
-        message:
-          error.code ===
-          "LIMIT_FILE_SIZE"
-            ? "Ảnh không được vượt quá 5 MB"
-            : error.message
-      });
+
+      if (
+        error.code ===
+        "LIMIT_FILE_SIZE"
+      ) {
+
+        return res
+          .status(400)
+          .json({
+            message:
+              "Ảnh không được vượt quá 5 MB."
+          });
+      }
     }
 
+
     if (error) {
-      return res.status(400).json({
-        message: error.message
-      });
+
+      return res
+        .status(400)
+        .json({
+          message:
+            error.message
+        });
     }
+
 
     next();
   }
 );
 
-module.exports = router;
+
+module.exports =
+  router;

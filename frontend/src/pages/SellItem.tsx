@@ -8,6 +8,9 @@ import {
   parseEther
 } from "ethers";
 
+import TransactionModal
+  from "../components/TransactionModal";
+
 import {
   GAME_ITEM_ADDRESS,
   GAME_ITEM_ABI,
@@ -15,48 +18,132 @@ import {
   MARKETPLACE_ABI
 } from "../blockchain/contracts";
 
+
+type ModalType =
+  | "confirm"
+  | "loading"
+  | "success"
+  | "error";
+
+
+type ModalState = {
+  open: boolean;
+  type: ModalType;
+  title: string;
+  message: string;
+};
+
+
 function SellItem() {
 
-  const [name, setName] =
-    useState("");
+  const [
+    name,
+    setName
+  ] = useState("");
+
 
   const [
     description,
     setDescription
   ] = useState("");
 
+
   const [
     category,
     setCategory
   ] = useState("Weapon");
+
 
   const [
     rarity,
     setRarity
   ] = useState("Common");
 
-  const [price, setPrice] =
-    useState("");
 
-  const [image, setImage] =
+  const [
+    price,
+    setPrice
+  ] = useState("");
+
+
+  const [
+    image,
+    setImage
+  ] =
     useState<File | null>(
       null
     );
+
 
   const [
     preview,
     setPreview
   ] = useState("");
 
+
   const [
     loading,
     setLoading
   ] = useState(false);
 
+
   const [
     status,
     setStatus
   ] = useState("");
+
+
+  const [
+    modal,
+    setModal
+  ] =
+    useState<ModalState>({
+      open: false,
+      type: "loading",
+      title: "",
+      message: ""
+    });
+
+
+  // =====================================
+  // MODAL
+  // =====================================
+
+  const showModal = (
+    type: ModalType,
+    title: string,
+    message: string
+  ) => {
+
+    setModal({
+      open: true,
+      type,
+      title,
+      message
+    });
+
+  };
+
+
+  const closeModal =
+    () => {
+
+      if (
+        modal.type === "loading"
+      ) {
+        return;
+      }
+
+
+      setModal(
+        (current) => ({
+          ...current,
+          open: false
+        })
+      );
+
+    };
+
 
   // =====================================
   // CHỌN ẢNH
@@ -70,19 +157,107 @@ function SellItem() {
     const file =
       event.target.files?.[0];
 
+
     if (!file) {
       return;
     }
 
-    setImage(file);
+
+    // =================================
+    // KIỂM TRA DUNG LƯỢNG
+    // =================================
+
+    if (
+      file.size >
+      5 * 1024 * 1024
+    ) {
+
+      showModal(
+        "error",
+        "Ảnh quá lớn",
+        "Hình ảnh không được vượt quá 5 MB."
+      );
+
+      return;
+
+    }
+
+
+    // =================================
+    // KIỂM TRA ĐỊNH DẠNG
+    // =================================
+
+    const allowedTypes = [
+      "image/jpeg",
+      "image/png",
+      "image/webp"
+    ];
+
+
+    if (
+      !allowedTypes.includes(
+        file.type
+      )
+    ) {
+
+      showModal(
+        "error",
+        "Định dạng không hợp lệ",
+        "Chỉ chấp nhận ảnh JPG, PNG hoặc WEBP."
+      );
+
+      return;
+
+    }
+
+
+    setImage(
+      file
+    );
+
 
     const previewUrl =
-      URL.createObjectURL(file);
+      URL.createObjectURL(
+        file
+      );
+
 
     setPreview(
       previewUrl
     );
+
   };
+
+
+  // =====================================
+  // RESET FORM
+  // =====================================
+
+  const resetForm =
+    () => {
+
+      setName("");
+
+      setDescription("");
+
+      setCategory(
+        "Weapon"
+      );
+
+      setRarity(
+        "Common"
+      );
+
+      setPrice("");
+
+      setImage(
+        null
+      );
+
+      setPreview("");
+
+    };
+
 
   // =====================================
   // TẠO NFT + ĐĂNG BÁN
@@ -91,13 +266,22 @@ function SellItem() {
   const createAndSell =
     async () => {
 
+      // =================================
+      // VALIDATE
+      // =================================
+
       if (!window.ethereum) {
-        alert(
-          "Vui lòng cài đặt MetaMask."
+
+        showModal(
+          "error",
+          "Chưa có MetaMask",
+          "Vui lòng cài đặt MetaMask để tạo và đăng bán NFT."
         );
 
         return;
+
       }
+
 
       if (
         !name.trim() ||
@@ -105,15 +289,23 @@ function SellItem() {
         !price ||
         !image
       ) {
-        alert(
-          "Vui lòng nhập đầy đủ thông tin và chọn hình ảnh."
+
+        showModal(
+          "error",
+          "Thiếu thông tin",
+          "Vui lòng nhập đầy đủ thông tin vật phẩm và chọn hình ảnh."
         );
 
         return;
+
       }
 
+
       const priceNumber =
-        Number(price);
+        Number(
+          price
+        );
+
 
       if (
         !Number.isFinite(
@@ -121,16 +313,24 @@ function SellItem() {
         ) ||
         priceNumber <= 0
       ) {
-        alert(
-          "Giá bán phải lớn hơn 0."
+
+        showModal(
+          "error",
+          "Giá bán không hợp lệ",
+          "Giá bán NFT phải lớn hơn 0 ETH."
         );
 
         return;
+
       }
+
 
       try {
 
-        setLoading(true);
+        setLoading(
+          true
+        );
+
 
         // =================================
         // CONNECT WALLET
@@ -140,30 +340,50 @@ function SellItem() {
           "Đang kết nối ví..."
         );
 
+
+        showModal(
+          "loading",
+          "Đang kiểm tra ví",
+          "Đang kết nối với MetaMask và kiểm tra mạng blockchain..."
+        );
+
+
         const provider =
           new BrowserProvider(
             window.ethereum
           );
 
+
         const network =
-          await provider.getNetwork();
+          await provider
+            .getNetwork();
+
 
         if (
           network.chainId !==
           31337n
         ) {
-          alert(
+
+          showModal(
+            "error",
+            "Sai mạng blockchain",
             "Vui lòng chuyển MetaMask sang mạng Hardhat Local (Chain ID 31337)."
           );
 
           return;
+
         }
 
+
         const signer =
-          await provider.getSigner();
+          await provider
+            .getSigner();
+
 
         const seller =
-          await signer.getAddress();
+          await signer
+            .getAddress();
+
 
         // =================================
         // CONTRACTS
@@ -176,6 +396,7 @@ function SellItem() {
             signer
           );
 
+
         const marketplace =
           new Contract(
             MARKETPLACE_ADDRESS,
@@ -183,143 +404,221 @@ function SellItem() {
             signer
           );
 
+
         // =================================
-        // TOKEN ID SẮP ĐƯỢC MINT
+        // TOKEN ID
         // =================================
 
         const tokenIdBefore =
-          await gameItem.nextTokenId();
+          await gameItem
+            .nextTokenId();
+
 
         const tokenId =
           Number(
             tokenIdBefore
           );
 
+
         console.log(
           "Token ID mới:",
           tokenId
         );
 
-        // =================================
-        // TOKEN URI
-        // =================================
 
         const tokenURI =
           `gameitem://${tokenId}`;
 
+
         // =================================
-        // MINT NFT
+        // BƯỚC 1: MINT
         // =================================
 
         setStatus(
-          "1/4 - Đang tạo NFT. Vui lòng xác nhận trên MetaMask..."
+          "1/4 - Đang tạo NFT..."
         );
 
+
+        showModal(
+          "loading",
+          "1/4 - Đang tạo NFT",
+          `Đang tạo NFT cho "${name}". Vui lòng xác nhận giao dịch Mint trong MetaMask.`
+        );
+
+
         const mintTx =
-          await gameItem.mintItem(
-            tokenURI
-          );
+          await gameItem
+            .mintItem(
+              tokenURI
+            );
+
 
         console.log(
           "Mint TX:",
           mintTx.hash
         );
 
+
+        showModal(
+          "loading",
+          "1/4 - Đang tạo NFT",
+          "Giao dịch Mint đã được gửi. Đang chờ blockchain xác nhận..."
+        );
+
+
         await mintTx.wait();
 
+
         // =================================
-        // APPROVE
+        // BƯỚC 2: APPROVE
         // =================================
 
         setStatus(
           "2/4 - Đang cấp quyền cho Marketplace..."
         );
 
+
+        showModal(
+          "loading",
+          "2/4 - Cấp quyền Marketplace",
+          "NFT đã được tạo. Vui lòng xác nhận giao dịch Approve trong MetaMask."
+        );
+
+
         const approveTx =
-          await gameItem.approve(
-            MARKETPLACE_ADDRESS,
-            tokenId
-          );
+          await gameItem
+            .approve(
+              MARKETPLACE_ADDRESS,
+              tokenId
+            );
+
 
         console.log(
           "Approve TX:",
           approveTx.hash
         );
 
+
+        showModal(
+          "loading",
+          "2/4 - Cấp quyền Marketplace",
+          "Giao dịch Approve đã được gửi. Đang chờ blockchain xác nhận..."
+        );
+
+
         await approveTx.wait();
 
+
         // =================================
-        // LIST ITEM
+        // BƯỚC 3: LIST
         // =================================
 
         setStatus(
           "3/4 - Đang đăng bán vật phẩm..."
         );
 
+
+        showModal(
+          "loading",
+          "3/4 - Đăng bán NFT",
+          `Vui lòng xác nhận đăng bán "${name}" với giá ${price} ETH trong MetaMask.`
+        );
+
+
         const listTx =
-          await marketplace.listItem(
-            GAME_ITEM_ADDRESS,
-            tokenId,
-            parseEther(price)
-          );
+          await marketplace
+            .listItem(
+              GAME_ITEM_ADDRESS,
+              tokenId,
+              parseEther(
+                price
+              )
+            );
+
 
         console.log(
           "List TX:",
           listTx.hash
         );
 
+
+        showModal(
+          "loading",
+          "3/4 - Đăng bán NFT",
+          "Giao dịch đăng bán đã được gửi. Đang chờ blockchain xác nhận..."
+        );
+
+
         await listTx.wait();
 
+
         // =================================
-        // LƯU BACKEND
+        // BƯỚC 4: BACKEND
         // =================================
 
         setStatus(
           "4/4 - Đang lưu thông tin vật phẩm..."
         );
 
+
+        showModal(
+          "loading",
+          "4/4 - Lưu thông tin",
+          "Blockchain đã xác nhận. Đang tải hình ảnh và lưu metadata vật phẩm..."
+        );
+
+
         const formData =
           new FormData();
+
 
         formData.append(
           "name",
           name
         );
 
+
         formData.append(
           "description",
           description
         );
+
 
         formData.append(
           "category",
           category
         );
 
+
         formData.append(
           "rarity",
           rarity
         );
+
 
         formData.append(
           "price",
           price
         );
 
+
         formData.append(
           "tokenId",
           tokenId.toString()
         );
+
 
         formData.append(
           "seller",
           seller
         );
 
+
         formData.append(
           "image",
           image
         );
+
 
         const response =
           await fetch(
@@ -330,20 +629,40 @@ function SellItem() {
             }
           );
 
-        const result =
-          await response.json();
 
-        if (!response.ok) {
-          throw new Error(
-            result.message ||
-            "Không thể lưu vật phẩm."
-          );
+        let result:
+          any = null;
+
+
+        try {
+
+          result =
+            await response.json();
+
+        } catch {
+
+          result = null;
+
         }
+
+
+        if (
+          !response.ok
+        ) {
+
+          throw new Error(
+            result?.message ||
+            "Blockchain đã đăng NFT nhưng không thể lưu metadata vào Backend."
+          );
+
+        }
+
 
         console.log(
           "Backend item:",
           result
         );
+
 
         // =================================
         // SUCCESS
@@ -353,31 +672,16 @@ function SellItem() {
           `Đăng bán thành công! Token #${tokenId}`
         );
 
-        alert(
-          `Đăng bán "${name}" thành công!\nToken #${tokenId}`
+
+        showModal(
+          "success",
+          "Đăng bán thành công!",
+          `"${name}" đã được tạo thành NFT và đăng bán với giá ${price} ETH. Token #${tokenId}.`
         );
 
-        // RESET FORM
 
-        setName("");
+        resetForm();
 
-        setDescription("");
-
-        setCategory(
-          "Weapon"
-        );
-
-        setRarity(
-          "Common"
-        );
-
-        setPrice("");
-
-        setImage(
-          null
-        );
-
-        setPreview("");
 
       } catch (error: any) {
 
@@ -386,39 +690,63 @@ function SellItem() {
           error
         );
 
+
         let message =
           "Không thể đăng bán vật phẩm.";
+
 
         if (
           error?.code ===
           "ACTION_REJECTED"
         ) {
+
           message =
-            "Bạn đã từ chối giao dịch trên MetaMask.";
+            "Bạn đã từ chối giao dịch trong MetaMask.";
+
         } else if (
           error?.message
         ) {
+
           message =
             error.message;
+
         }
+
 
         setStatus(
           `Lỗi: ${message}`
         );
 
-        alert(
+
+        showModal(
+          "error",
+          error?.code ===
+            "ACTION_REJECTED"
+            ? "Đã hủy giao dịch"
+            : "Đăng bán thất bại",
           message
         );
 
+
       } finally {
 
-        setLoading(false);
+        setLoading(
+          false
+        );
 
       }
+
     };
 
+
+  // =====================================
+  // UI
+  // =====================================
+
   return (
+
     <main className="sell-page">
+
 
       <div className="sell-header">
 
@@ -426,9 +754,11 @@ function SellItem() {
           TẠO NFT
         </span>
 
+
         <h1>
           Đăng bán vật phẩm
         </h1>
+
 
         <p>
           Tạo NFT cho vật phẩm game của bạn
@@ -437,11 +767,13 @@ function SellItem() {
 
       </div>
 
+
       <div className="create-item-layout">
 
-        {/* ========================= */}
+
+        {/* ================================= */}
         {/* IMAGE */}
-        {/* ========================= */}
+        {/* ================================= */}
 
         <div className="upload-panel">
 
@@ -449,35 +781,44 @@ function SellItem() {
             Hình ảnh vật phẩm
           </h2>
 
+
           <label className="image-upload-box">
 
             {preview ? (
+
               <img
                 src={preview}
                 alt="Xem trước vật phẩm"
                 className="image-preview"
               />
+
             ) : (
+
               <div className="upload-placeholder">
 
                 <div className="upload-icon">
                   🖼️
                 </div>
 
+
                 <strong>
                   Chọn hình ảnh
                 </strong>
 
+
                 <span>
                   PNG, JPG hoặc WEBP
                 </span>
+
 
                 <span>
                   Tối đa 5 MB
                 </span>
 
               </div>
+
             )}
+
 
             <input
               type="file"
@@ -485,24 +826,32 @@ function SellItem() {
               onChange={
                 handleImageChange
               }
+              disabled={
+                loading
+              }
               hidden
             />
 
           </label>
 
+
           {image && (
+
             <p className="selected-file">
               Đã chọn: {image.name}
             </p>
+
           )}
 
         </div>
 
-        {/* ========================= */}
+
+        {/* ================================= */}
         {/* FORM */}
-        {/* ========================= */}
+        {/* ================================= */}
 
         <div className="create-form-panel">
+
 
           <div className="form-group">
 
@@ -510,10 +859,12 @@ function SellItem() {
               Tên vật phẩm
             </label>
 
+
             <input
               type="text"
               placeholder="Ví dụ: Kiếm Rồng Lửa"
               value={name}
+              disabled={loading}
               onChange={(e) =>
                 setName(
                   e.target.value
@@ -523,15 +874,18 @@ function SellItem() {
 
           </div>
 
+
           <div className="form-group">
 
             <label>
               Mô tả
             </label>
 
+
             <textarea
               placeholder="Mô tả vật phẩm của bạn..."
               value={description}
+              disabled={loading}
               onChange={(e) =>
                 setDescription(
                   e.target.value
@@ -542,7 +896,9 @@ function SellItem() {
 
           </div>
 
+
           <div className="form-row">
+
 
             <div className="form-group">
 
@@ -550,14 +906,17 @@ function SellItem() {
                 Loại vật phẩm
               </label>
 
+
               <select
                 value={category}
+                disabled={loading}
                 onChange={(e) =>
                   setCategory(
                     e.target.value
                   )
                 }
               >
+
                 <option value="Weapon">
                   Vũ khí
                 </option>
@@ -573,9 +932,11 @@ function SellItem() {
                 <option value="Other">
                   Khác
                 </option>
+
               </select>
 
             </div>
+
 
             <div className="form-group">
 
@@ -583,14 +944,17 @@ function SellItem() {
                 Độ hiếm
               </label>
 
+
               <select
                 value={rarity}
+                disabled={loading}
                 onChange={(e) =>
                   setRarity(
                     e.target.value
                   )
                 }
               >
+
                 <option value="Common">
                   Thường
                 </option>
@@ -606,17 +970,21 @@ function SellItem() {
                 <option value="Legendary">
                   Huyền thoại
                 </option>
+
               </select>
 
             </div>
 
+
           </div>
+
 
           <div className="form-group">
 
             <label>
               Giá bán
             </label>
+
 
             <div className="price-input">
 
@@ -626,12 +994,14 @@ function SellItem() {
                 step="0.01"
                 placeholder="0.50"
                 value={price}
+                disabled={loading}
                 onChange={(e) =>
                   setPrice(
                     e.target.value
                   )
                 }
               />
+
 
               <span>
                 ETH
@@ -640,6 +1010,7 @@ function SellItem() {
             </div>
 
           </div>
+
 
           <div className="transaction-info">
 
@@ -665,6 +1036,7 @@ function SellItem() {
 
           </div>
 
+
           <button
             className="create-button"
             onClick={
@@ -676,23 +1048,55 @@ function SellItem() {
           >
 
             {loading
-              ? "Đang xử lý..."
-              : "🚀 Tạo NFT & Đăng bán"}
+              ? "⏳ Đang xử lý..."
+              : "🚀 Tạo NFT & Đăng bán"
+            }
 
           </button>
 
+
           {status && (
+
             <div className="create-status">
               {status}
             </div>
+
           )}
+
 
         </div>
 
       </div>
 
+
+      {/* ================================= */}
+      {/* TRANSACTION MODAL */}
+      {/* ================================= */}
+
+      <TransactionModal
+        open={
+          modal.open
+        }
+        type={
+          modal.type
+        }
+        title={
+          modal.title
+        }
+        message={
+          modal.message
+        }
+        onClose={
+          closeModal
+        }
+      />
+
+
     </main>
+
   );
+
 }
+
 
 export default SellItem;
