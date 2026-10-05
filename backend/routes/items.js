@@ -1,114 +1,114 @@
 const express = require("express");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+
 const router = express.Router();
 
-let items = [
-  {
-    id: 1,
-    name: "Dragon Sword",
-    description: "Legendary sword forged with dragon fire.",
-    category: "Weapon",
-    rarity: "Legendary",
-    price: "1",
-    image: "/items/dragon-sword.png",
-    tokenId: 1,
-    listingId: 2
-  },
-  {
-    id: 2,
-    name: "Shadow Dagger",
-    description: "A silent blade used by shadow assassins.",
-    category: "Weapon",
-    rarity: "Epic",
-    price: "0.45",
-    image: "/items/shadow-dagger.png",
-    tokenId: 2,
-    listingId: 3
-  },
-  {
-    id: 3,
-    name: "Frost Bow",
-    description: "An ancient bow powered by frozen energy.",
-    category: "Weapon",
-    rarity: "Rare",
-    price: "0.6",
-    image: "/items/frost-bow.png",
-    tokenId: 3,
-    listingId: 4
-  },
-  {
-    id: 4,
-    name: "Magic Shield",
-    description: "A magical shield with powerful protection.",
-    category: "Armor",
-    rarity: "Rare",
-    price: "0.5",
-    image: "/items/magic-shield.png",
-    tokenId: 4,
-    listingId: 5
-  },
-  {
-    id: 5,
-    name: "Dark Knight Armor",
-    description: "Heavy armor forged for elite warriors.",
-    category: "Armor",
-    rarity: "Legendary",
-    price: "1.2",
-    image: "/items/dark-knight-armor.png",
-    tokenId: 5,
-    listingId: 6
-  },
-  {
-    id: 6,
-    name: "Dragon Helmet",
-    description: "Helmet crafted from legendary dragon scales.",
-    category: "Armor",
-    rarity: "Epic",
-    price: "0.75",
-    image: "/items/dragon-helmet.png",
-    tokenId: 6,
-    listingId: 7
-  },
-  {
-    id: 7,
-    name: "Neon Rifle Skin",
-    description: "Cyberpunk neon skin for futuristic rifles.",
-    category: "Skin",
-    rarity: "Epic",
-    price: "0.35",
-    image: "/items/neon-rifle.png",
-    tokenId: 7,
-    listingId: 8
-  },
-  {
-    id: 8,
-    name: "Golden Rifle Skin",
-    description: "Premium golden weapon skin for collectors.",
-    category: "Skin",
-    rarity: "Legendary",
-    price: "0.9",
-    image: "/items/golden-rifle.png",
-    tokenId: 8,
-    listingId: 9
-  },
-  {
-    id: 9,
-    name: "Cyber Blade",
-    description: "High-tech energy blade from the cyber arena.",
-    category: "Weapon",
-    rarity: "Rare",
-    price: "0.55",
-    image: "/items/cyber-blade.png",
-    tokenId: 9,
-    listingId: 10
-  }
-];
+// =====================================
+// THƯ MỤC UPLOAD
+// =====================================
 
-// GET tất cả vật phẩm
+const uploadDirectory = path.join(
+  __dirname,
+  "../uploads"
+);
+
+if (!fs.existsSync(uploadDirectory)) {
+  fs.mkdirSync(uploadDirectory, {
+    recursive: true
+  });
+}
+
+// =====================================
+// CẤU HÌNH UPLOAD ẢNH
+// =====================================
+
+const storage = multer.diskStorage({
+  destination: function (
+    req,
+    file,
+    cb
+  ) {
+    cb(null, uploadDirectory);
+  },
+
+  filename: function (
+    req,
+    file,
+    cb
+  ) {
+    const extension =
+      path.extname(file.originalname);
+
+    const uniqueName =
+      Date.now() +
+      "-" +
+      Math.round(
+        Math.random() * 1e9
+      ) +
+      extension;
+
+    cb(null, uniqueName);
+  }
+});
+
+const upload = multer({
+  storage,
+
+  limits: {
+    fileSize: 5 * 1024 * 1024
+  },
+
+  fileFilter: function (
+    req,
+    file,
+    cb
+  ) {
+    const allowedTypes = [
+      "image/jpeg",
+      "image/png",
+      "image/webp"
+    ];
+
+    if (
+      allowedTypes.includes(
+        file.mimetype
+      )
+    ) {
+      cb(null, true);
+    } else {
+      cb(
+        new Error(
+          "Chỉ cho phép ảnh JPG, PNG hoặc WEBP"
+        )
+      );
+    }
+  }
+});
+
+// =====================================
+// DỮ LIỆU ĐỘNG
+// =====================================
+
+// Không còn 9 vật phẩm mẫu.
+// Vật phẩm sẽ được thêm khi người dùng
+// tạo NFT và đăng bán trên giao diện.
+
+let items = [];
+
+// =====================================
+// GET TẤT CẢ VẬT PHẨM
+// =====================================
+
 router.get("/", (req, res) => {
   res.json(items);
 });
 
-// GET vật phẩm theo ID
+// =====================================
+// GET VẬT PHẨM THEO ID
+// =====================================
+
 router.get("/:id", (req, res) => {
   const id = Number(req.params.id);
 
@@ -118,31 +118,180 @@ router.get("/:id", (req, res) => {
 
   if (!item) {
     return res.status(404).json({
-      message: "Item not found"
+      message:
+        "Không tìm thấy vật phẩm"
     });
   }
 
   res.json(item);
 });
 
-// POST thêm vật phẩm
-router.post("/", (req, res) => {
-  const newId =
-    items.length > 0
-      ? Math.max(...items.map((item) => item.id)) + 1
-      : 1;
+// =====================================
+// TẠO VẬT PHẨM
+// =====================================
 
-  const item = {
-    id: newId,
-    ...req.body
-  };
+router.post(
+  "/",
+  upload.single("image"),
+  (req, res) => {
+    try {
+      const {
+        name,
+        description,
+        category,
+        rarity,
+        price,
+        tokenId,
+        seller
+      } = req.body;
 
-  items.push(item);
+      // =================================
+      // VALIDATE
+      // =================================
 
-  res.status(201).json(item);
-});
+      if (
+        !name ||
+        !description ||
+        !category ||
+        !rarity ||
+        !price ||
+        !tokenId ||
+        !seller
+      ) {
+        return res.status(400).json({
+          message:
+            "Vui lòng nhập đầy đủ thông tin"
+        });
+      }
 
-// DELETE vật phẩm
+      if (!req.file) {
+        return res.status(400).json({
+          message:
+            "Vui lòng chọn hình ảnh vật phẩm"
+        });
+      }
+
+      // Không cho metadata trùng token
+      const existingToken =
+        items.find(
+          (item) =>
+            item.tokenId ===
+            Number(tokenId)
+        );
+
+      if (existingToken) {
+        return res.status(409).json({
+          message:
+            `Token #${tokenId} đã tồn tại`
+        });
+      }
+
+      // =================================
+      // TẠO ID BACKEND
+      // =================================
+
+      const newId =
+        items.length > 0
+          ? Math.max(
+              ...items.map(
+                (item) => item.id
+              )
+            ) + 1
+          : 1;
+
+      // =================================
+      // URL ẢNH
+      // =================================
+
+      const imageUrl =
+        `http://localhost:3000/uploads/${req.file.filename}`;
+
+      // =================================
+      // VẬT PHẨM MỚI
+      // =================================
+
+      const newItem = {
+        id: newId,
+
+        name:
+          name.trim(),
+
+        description:
+          description.trim(),
+
+        category,
+
+        rarity,
+
+        price,
+
+        image:
+          imageUrl,
+
+        tokenId:
+          Number(tokenId),
+
+        seller
+      };
+
+      items.push(newItem);
+
+      console.log("");
+      console.log(
+        "=============================="
+      );
+
+      console.log(
+        "VẬT PHẨM MỚI"
+      );
+
+      console.log(
+        "=============================="
+      );
+
+      console.log(
+        "Tên:",
+        newItem.name
+      );
+
+      console.log(
+        "Token:",
+        newItem.tokenId
+      );
+
+      console.log(
+        "Người bán:",
+        newItem.seller
+      );
+
+      console.log(
+        "Giá:",
+        newItem.price,
+        "ETH"
+      );
+
+      res
+        .status(201)
+        .json(newItem);
+
+    } catch (error) {
+      console.error(
+        "Lỗi tạo vật phẩm:",
+        error
+      );
+
+      res.status(500).json({
+        message:
+          "Không thể tạo vật phẩm"
+      });
+    }
+  }
+);
+
+// =====================================
+// DELETE
+// =====================================
+
 router.delete("/:id", (req, res) => {
   const id = Number(req.params.id);
 
@@ -152,7 +301,8 @@ router.delete("/:id", (req, res) => {
 
   if (!item) {
     return res.status(404).json({
-      message: "Item not found"
+      message:
+        "Không tìm thấy vật phẩm"
     });
   }
 
@@ -161,8 +311,38 @@ router.delete("/:id", (req, res) => {
   );
 
   res.json({
-    message: "Item deleted"
+    message:
+      "Đã xóa vật phẩm"
   });
 });
+
+// =====================================
+// XỬ LÝ LỖI UPLOAD
+// =====================================
+
+router.use(
+  (error, req, res, next) => {
+    if (
+      error instanceof
+      multer.MulterError
+    ) {
+      return res.status(400).json({
+        message:
+          error.code ===
+          "LIMIT_FILE_SIZE"
+            ? "Ảnh không được vượt quá 5 MB"
+            : error.message
+      });
+    }
+
+    if (error) {
+      return res.status(400).json({
+        message: error.message
+      });
+    }
+
+    next();
+  }
+);
 
 module.exports = router;

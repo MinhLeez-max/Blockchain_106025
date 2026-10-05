@@ -1,5 +1,11 @@
-import { useEffect, useState } from "react";
-import { BrowserProvider } from "ethers";
+import {
+  useEffect,
+  useState
+} from "react";
+
+import {
+  BrowserProvider
+} from "ethers";
 
 import {
   BrowserRouter,
@@ -11,99 +17,147 @@ import Navbar from "./components/Navbar";
 import Marketplace from "./pages/Marketplace";
 import MyItems from "./pages/MyItems";
 import SellItem from "./pages/SellItem";
+import Activity from "./pages/Activity";
 
 import "./App.css";
 
 function App() {
-  const [account, setAccount] = useState("");
 
-  // ============================
-  // CHECK WALLET
-  // ============================
+  const [
+    account,
+    setAccount
+  ] = useState("");
 
-  const checkWallet = async () => {
-    if (!window.ethereum) return;
+  // =====================================
+  // KIỂM TRA WALLET
+  // =====================================
 
-    try {
-      const provider =
-        new BrowserProvider(window.ethereum);
+  const checkWallet =
+    async () => {
 
-      const accounts = await provider.send(
-        "eth_accounts",
-        []
-      );
-
-      if (accounts.length > 0) {
-        setAccount(accounts[0]);
-      } else {
-        setAccount("");
+      if (!window.ethereum) {
+        return;
       }
 
-    } catch (error) {
-      console.error(
-        "Check wallet error:",
-        error
-      );
-    }
-  };
+      try {
 
-  // ============================
+        const provider =
+          new BrowserProvider(
+            window.ethereum
+          );
+
+        const accounts =
+          await provider.send(
+            "eth_accounts",
+            []
+          );
+
+        if (
+          accounts.length > 0
+        ) {
+          setAccount(
+            accounts[0]
+          );
+        } else {
+          setAccount("");
+        }
+
+      } catch (error) {
+
+        console.error(
+          "Check wallet error:",
+          error
+        );
+
+      }
+    };
+
+  // =====================================
   // CONNECT WALLET
-  // ============================
+  // =====================================
 
-  const connectWallet = async () => {
+  const connectWallet =
+    async () => {
+
+      if (!window.ethereum) {
+
+        alert(
+          "Vui lòng cài đặt MetaMask!"
+        );
+
+        return;
+      }
+
+      try {
+
+        const provider =
+          new BrowserProvider(
+            window.ethereum
+          );
+
+        const accounts =
+          await provider.send(
+            "eth_requestAccounts",
+            []
+          );
+
+        if (
+          accounts.length > 0
+        ) {
+          setAccount(
+            accounts[0]
+          );
+        }
+
+      } catch (error) {
+
+        console.error(
+          "Connect wallet error:",
+          error
+        );
+
+      }
+    };
+
+  // =====================================
+  // METAMASK EVENTS
+  // =====================================
+
+  useEffect(() => {
+
+    checkWallet();
+
     if (!window.ethereum) {
-      alert("Vui lòng cài MetaMask!");
       return;
     }
 
-    try {
-      const provider =
-        new BrowserProvider(window.ethereum);
+    const handleAccountsChanged =
+      (
+        accounts: string[]
+      ) => {
 
-      const accounts = await provider.send(
-        "eth_requestAccounts",
-        []
-      );
+        console.log(
+          "MetaMask account changed:",
+          accounts[0]
+        );
 
-      setAccount(accounts[0]);
+        if (
+          accounts.length > 0
+        ) {
+          setAccount(
+            accounts[0]
+          );
+        } else {
+          setAccount("");
+        }
+      };
 
-    } catch (error) {
-      console.error(
-        "Connect wallet error:",
-        error
-      );
-    }
-  };
+    const handleChainChanged =
+      () => {
 
-  // ============================
-  // LISTEN METAMASK
-  // ============================
+        window.location.reload();
 
-  useEffect(() => {
-    checkWallet();
-
-    if (!window.ethereum) return;
-
-    const handleAccountsChanged = (
-      accounts: string[]
-    ) => {
-      console.log(
-        "MetaMask account changed:",
-        accounts[0]
-      );
-
-      if (accounts.length > 0) {
-        setAccount(accounts[0]);
-      } else {
-        setAccount("");
-      }
-    };
-
-    const handleChainChanged = () => {
-      // Network thay đổi -> tải lại trạng thái DApp
-      window.location.reload();
-    };
+      };
 
     window.ethereum.on(
       "accountsChanged",
@@ -116,6 +170,7 @@ function App() {
     );
 
     return () => {
+
       window.ethereum.removeListener(
         "accountsChanged",
         handleAccountsChanged
@@ -125,15 +180,23 @@ function App() {
         "chainChanged",
         handleChainChanged
       );
+
     };
+
   }, []);
+
+  // =====================================
+  // ROUTES
+  // =====================================
 
   return (
     <BrowserRouter>
 
       <Navbar
         account={account}
-        connectWallet={connectWallet}
+        connectWallet={
+          connectWallet
+        }
       />
 
       <Routes>
@@ -148,7 +211,9 @@ function App() {
         <Route
           path="/my-items"
           element={
-            <MyItems account={account} />
+            <MyItems
+              account={account}
+            />
           }
         />
 
@@ -156,6 +221,13 @@ function App() {
           path="/sell"
           element={
             <SellItem />
+          }
+        />
+
+        <Route
+          path="/activity"
+          element={
+            <Activity />
           }
         />
 

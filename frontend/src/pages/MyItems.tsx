@@ -1,11 +1,18 @@
-import { useEffect, useState } from "react";
+import {
+  useEffect,
+  useState
+} from "react";
+
 import {
   BrowserProvider,
   Contract,
-  formatEther
+  formatEther,
+  parseEther
 } from "ethers";
 
-import type { Item } from "../components/ItemCard";
+import type {
+  Item
+} from "../components/ItemCard";
 
 import {
   GAME_ITEM_ADDRESS,
@@ -23,417 +30,676 @@ type Props = {
   account: string;
 };
 
-type OwnedItem = Item & {
-  isForSale: boolean;
-  blockchainPrice?: string;
-  latestListingId?: number;
-};
+type OwnedItem =
+  Item & {
+    isForSale: boolean;
+    blockchainPrice?: string;
+    latestListingId?: number;
+  };
 
-function MyItems({ account }: Props) {
-  const [myItems, setMyItems] =
-    useState<OwnedItem[]>([]);
+function translateCategory(
+  category: string
+) {
+  const values:
+    Record<string, string> = {
+      Weapon: "Vũ khí",
+      Armor: "Trang bị",
+      Skin: "Skin",
+      Other: "Khác"
+    };
 
-  const [loading, setLoading] =
-    useState(false);
+  return values[category] || category;
+}
 
-  const [cancellingId, setCancellingId] =
-    useState<number | null>(null);
+function translateRarity(
+  rarity: string
+) {
+  const values:
+    Record<string, string> = {
+      Common: "Thường",
+      Rare: "Hiếm",
+      Epic: "Sử thi",
+      Legendary: "Huyền thoại"
+    };
+
+  return values[rarity] || rarity;
+}
+
+function MyItems({
+  account
+}: Props) {
+
+  const [
+    myItems,
+    setMyItems
+  ] = useState<OwnedItem[]>([]);
+
+  const [
+    loading,
+    setLoading
+  ] = useState(false);
+
+  const [
+    cancellingId,
+    setCancellingId
+  ] = useState<number | null>(null);
+
+  const [
+    sellingId,
+    setSellingId
+  ] = useState<number | null>(null);
+
+  const [
+    resalePrices,
+    setResalePrices
+  ] = useState<
+    Record<number, string>
+  >({});
 
   // =====================================
-  // ACCOUNT THAY ĐỔI -> LOAD LẠI
+  // ACCOUNT THAY ĐỔI
   // =====================================
 
   useEffect(() => {
+
     if (!account) {
       setMyItems([]);
       return;
     }
 
     loadMyItems();
+
   }, [account]);
 
   // =====================================
-  // LOAD NFT CỦA ACCOUNT
+  // LOAD KHO VẬT PHẨM
   // =====================================
 
-  const loadMyItems = async () => {
-    try {
-      setLoading(true);
+  const loadMyItems =
+    async () => {
 
-      if (!window.ethereum) {
-        return;
+      try {
+
+        setLoading(true);
+
+        if (!window.ethereum) {
+          return;
+        }
+
+        const response =
+          await fetch(
+            "http://localhost:3000/api/items"
+          );
+
+        if (!response.ok) {
+          throw new Error(
+            "Không thể tải dữ liệu vật phẩm."
+          );
+        }
+
+        const items:
+          Item[] =
+          await response.json();
+
+        const provider =
+          new BrowserProvider(
+            window.ethereum
+          );
+
+        const gameItem =
+          new Contract(
+            GAME_ITEM_ADDRESS,
+            GAME_ITEM_ABI,
+            provider
+          );
+
+        const marketplace =
+          new Contract(
+            MARKETPLACE_ADDRESS,
+            MARKETPLACE_ABI,
+            provider
+          );
+
+        const allListings =
+          await loadAllListings(
+            marketplace
+          );
+
+        const ownedItems:
+          OwnedItem[] = [];
+
+        for (
+          const item
+          of items
+        ) {
+
+          try {
+
+            const owner =
+              await gameItem.ownerOf(
+                item.tokenId
+              );
+
+            if (
+              owner.toLowerCase() !==
+              account.toLowerCase()
+            ) {
+              continue;
+            }
+
+            const latestListing =
+              findLatestListing(
+                allListings,
+                item.tokenId
+              );
+
+            let isForSale =
+              false;
+
+            let blockchainPrice:
+              string | undefined;
+
+            let latestListingId:
+              number | undefined;
+
+            if (latestListing) {
+
+              latestListingId =
+                latestListing.listingId;
+
+              if (
+                latestListing.active &&
+                latestListing.seller
+                  .toLowerCase() ===
+                account.toLowerCase()
+              ) {
+
+                isForSale = true;
+
+                blockchainPrice =
+                  formatEther(
+                    latestListing.price
+                  );
+              }
+            }
+
+            ownedItems.push({
+              ...item,
+              isForSale,
+              blockchainPrice,
+              latestListingId
+            });
+
+          } catch (error) {
+
+            console.error(
+              `Không đọc được Token #${item.tokenId}:`,
+              error
+            );
+
+          }
+        }
+
+        setMyItems(
+          ownedItems
+        );
+
+      } catch (error) {
+
+        console.error(
+          "Lỗi tải kho vật phẩm:",
+          error
+        );
+
+      } finally {
+
+        setLoading(false);
+
       }
+    };
 
-      // =====================================
-      // LẤY METADATA TỪ BACKEND
-      // =====================================
+  // =====================================
+  // BÁN LẠI NFT
+  // =====================================
 
-      const response = await fetch(
-        "http://localhost:3000/api/items"
-      );
+  const resellItem =
+    async (
+      item: OwnedItem
+    ) => {
 
-      const items: Item[] =
-        await response.json();
+      try {
 
-      // =====================================
-      // KẾT NỐI BLOCKCHAIN
-      // =====================================
+        if (!window.ethereum) {
+          alert(
+            "Vui lòng cài đặt MetaMask."
+          );
 
-      const provider =
-        new BrowserProvider(
-          window.ethereum
+          return;
+        }
+
+        const price =
+          resalePrices[
+            item.id
+          ];
+
+        if (!price) {
+          alert(
+            "Vui lòng nhập giá bán."
+          );
+
+          return;
+        }
+
+        const priceNumber =
+          Number(price);
+
+        if (
+          !Number.isFinite(
+            priceNumber
+          ) ||
+          priceNumber <= 0
+        ) {
+          alert(
+            "Giá bán phải lớn hơn 0."
+          );
+
+          return;
+        }
+
+        setSellingId(
+          item.id
         );
 
-      const gameItem =
-        new Contract(
-          GAME_ITEM_ADDRESS,
-          GAME_ITEM_ABI,
-          provider
-        );
+        const provider =
+          new BrowserProvider(
+            window.ethereum
+          );
 
-      const marketplace =
-        new Contract(
-          MARKETPLACE_ADDRESS,
-          MARKETPLACE_ABI,
-          provider
-        );
+        const network =
+          await provider.getNetwork();
 
-      // =====================================
-      // LOAD TẤT CẢ LISTING CHỈ 1 LẦN
-      // =====================================
+        if (
+          network.chainId !==
+          31337n
+        ) {
+          alert(
+            "Vui lòng chuyển sang mạng Hardhat Local."
+          );
 
-      const allListings =
-        await loadAllListings(
-          marketplace
-        );
+          return;
+        }
 
-      console.log(
-        "All Listings:",
-        allListings
-      );
+        const signer =
+          await provider.getSigner();
 
-      const ownedItems: OwnedItem[] = [];
+        const seller =
+          await signer.getAddress();
 
-      // =====================================
-      // KIỂM TRA TỪNG NFT
-      // =====================================
+        // Kiểm tra đúng wallet
+        if (
+          seller.toLowerCase() !==
+          account.toLowerCase()
+        ) {
+          alert(
+            "Tài khoản MetaMask đã thay đổi."
+          );
 
-      for (const item of items) {
-        try {
-          // =================================
-          // KIỂM TRA OWNER THẬT
-          // =================================
+          return;
+        }
 
-          const owner =
-            await gameItem.ownerOf(
+        const gameItem =
+          new Contract(
+            GAME_ITEM_ADDRESS,
+            GAME_ITEM_ABI,
+            signer
+          );
+
+        const marketplace =
+          new Contract(
+            MARKETPLACE_ADDRESS,
+            MARKETPLACE_ABI,
+            signer
+          );
+
+        // =================================
+        // KIỂM TRA OWNER
+        // =================================
+
+        const owner =
+          await gameItem.ownerOf(
+            item.tokenId
+          );
+
+        if (
+          owner.toLowerCase() !==
+          seller.toLowerCase()
+        ) {
+          alert(
+            "Bạn không sở hữu NFT này."
+          );
+
+          return;
+        }
+
+        // =================================
+        // KIỂM TRA LISTING
+        // =================================
+
+        const allListings =
+          await loadAllListings(
+            marketplace
+          );
+
+        const latestListing =
+          findLatestListing(
+            allListings,
+            item.tokenId
+          );
+
+        if (
+          latestListing &&
+          latestListing.active
+        ) {
+          alert(
+            "Vật phẩm này đang được đăng bán."
+          );
+
+          await loadMyItems();
+
+          return;
+        }
+
+        // =================================
+        // APPROVE
+        // =================================
+
+        const approved =
+          await gameItem.getApproved(
+            item.tokenId
+          );
+
+        const approvedForAll =
+          await gameItem.isApprovedForAll(
+            seller,
+            MARKETPLACE_ADDRESS
+          );
+
+        if (
+          approved.toLowerCase() !==
+            MARKETPLACE_ADDRESS
+              .toLowerCase() &&
+          !approvedForAll
+        ) {
+
+          const approveTx =
+            await gameItem.approve(
+              MARKETPLACE_ADDRESS,
               item.tokenId
             );
 
           console.log(
-            `Token #${item.tokenId}`,
-            "Owner:",
-            owner
+            "Approve transaction:",
+            approveTx.hash
           );
 
-          // NFT không thuộc account hiện tại
-          if (
-            owner.toLowerCase() !==
-            account.toLowerCase()
-          ) {
-            continue;
-          }
+          await approveTx.wait();
+        }
 
-          // =================================
-          // TÌM LISTING MỚI NHẤT
-          // =================================
+        // =================================
+        // LIST LẠI
+        // =================================
 
-          const latestListing =
-            findLatestListing(
-              allListings,
-              item.tokenId
-            );
+        const confirmed =
+          window.confirm(
+            `Đăng bán lại "${item.name}" với giá ${price} ETH?`
+          );
 
-          let isForSale = false;
+        if (!confirmed) {
+          return;
+        }
 
-          let blockchainPrice:
-            string | undefined;
+        const listTx =
+          await marketplace.listItem(
+            GAME_ITEM_ADDRESS,
+            item.tokenId,
+            parseEther(price)
+          );
 
-          let latestListingId:
-            number | undefined;
+        console.log(
+          "Resell transaction:",
+          listTx.hash
+        );
 
-          if (latestListing) {
-            latestListingId =
-              latestListing.listingId;
+        await listTx.wait();
 
-            console.log(
-              `Token #${item.tokenId}`,
-              `Latest Listing #${latestListing.listingId}`,
-              `Active: ${latestListing.active}`,
-              `Seller: ${latestListing.seller}`
-            );
+        alert(
+          `Đã đăng bán lại "${item.name}" với giá ${price} ETH.`
+        );
 
-            // =================================
-            // ĐANG ĐƯỢC ĐĂNG BÁN
-            // =================================
+        setResalePrices(
+          (current) => ({
+            ...current,
+            [item.id]: ""
+          })
+        );
 
-            if (
-              latestListing.active &&
-              latestListing.seller.toLowerCase() ===
-                account.toLowerCase()
-            ) {
-              isForSale = true;
+        await loadMyItems();
 
-              blockchainPrice =
-                formatEther(
-                  latestListing.price
-                );
-            }
+      } catch (error: any) {
 
-          } else {
-            console.log(
-              `Token #${item.tokenId}`,
-              "No listing"
-            );
-          }
+        console.error(
+          "Lỗi bán lại:",
+          error
+        );
 
-          // =================================
-          // THÊM VÀO MY ITEMS
-          // =================================
-
-          ownedItems.push({
-            ...item,
-            isForSale,
-            blockchainPrice,
-            latestListingId
-          });
-
-        } catch (error) {
-          console.error(
-            `Token #${item.tokenId} error:`,
-            error
+        if (
+          error?.code ===
+          "ACTION_REJECTED"
+        ) {
+          alert(
+            "Bạn đã từ chối giao dịch."
+          );
+        } else {
+          alert(
+            "Không thể đăng bán lại vật phẩm."
           );
         }
+
+      } finally {
+
+        setSellingId(null);
+
       }
-
-      console.log(
-        "Owned Items:",
-        ownedItems
-      );
-
-      setMyItems(ownedItems);
-
-    } catch (error) {
-      console.error(
-        "Load My Items error:",
-        error
-      );
-
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
 
   // =====================================
-  // CANCEL LISTING
+  // HỦY ĐĂNG BÁN
   // =====================================
 
-  const cancelListing = async (
-    item: OwnedItem
-  ) => {
-    try {
-      if (!window.ethereum) {
+  const cancelListing =
+    async (
+      item: OwnedItem
+    ) => {
+
+      try {
+
+        if (!window.ethereum) {
+          alert(
+            "Vui lòng cài đặt MetaMask."
+          );
+
+          return;
+        }
+
+        setCancellingId(
+          item.id
+        );
+
+        const provider =
+          new BrowserProvider(
+            window.ethereum
+          );
+
+        const network =
+          await provider.getNetwork();
+
+        if (
+          network.chainId !==
+          31337n
+        ) {
+          alert(
+            "Vui lòng chuyển sang mạng Hardhat Local."
+          );
+
+          return;
+        }
+
+        const signer =
+          await provider.getSigner();
+
+        const signerAddress =
+          await signer.getAddress();
+
+        if (
+          signerAddress
+            .toLowerCase() !==
+          account.toLowerCase()
+        ) {
+          alert(
+            "Tài khoản MetaMask đã thay đổi."
+          );
+
+          return;
+        }
+
+        const marketplace =
+          new Contract(
+            MARKETPLACE_ADDRESS,
+            MARKETPLACE_ABI,
+            signer
+          );
+
+        const allListings =
+          await loadAllListings(
+            marketplace
+          );
+
+        const latestListing =
+          findLatestListing(
+            allListings,
+            item.tokenId
+          );
+
+        if (!latestListing) {
+          alert(
+            "Không tìm thấy thông tin đăng bán."
+          );
+
+          return;
+        }
+
+        if (
+          !latestListing.active
+        ) {
+          alert(
+            "Vật phẩm hiện không được đăng bán."
+          );
+
+          await loadMyItems();
+
+          return;
+        }
+
+        if (
+          latestListing.seller
+            .toLowerCase() !==
+          account.toLowerCase()
+        ) {
+          alert(
+            "Bạn không phải người đăng bán."
+          );
+
+          return;
+        }
+
+        const confirmed =
+          window.confirm(
+            `Bạn muốn hủy đăng bán "${item.name}"?`
+          );
+
+        if (!confirmed) {
+          return;
+        }
+
+        const tx =
+          await marketplace
+            .cancelListing(
+              latestListing
+                .listingId
+            );
+
+        await tx.wait();
+
         alert(
-          "Vui lòng cài MetaMask!"
-        );
-        return;
-      }
-
-      setCancellingId(
-        item.id
-      );
-
-      const provider =
-        new BrowserProvider(
-          window.ethereum
-        );
-
-      // =====================================
-      // KIỂM TRA NETWORK
-      // =====================================
-
-      const network =
-        await provider.getNetwork();
-
-      if (
-        network.chainId !== 31337n
-      ) {
-        alert(
-          "Hãy chuyển MetaMask sang Hardhat Local."
-        );
-        return;
-      }
-
-      // =====================================
-      // LẤY SIGNER
-      // =====================================
-
-      const signer =
-        await provider.getSigner();
-
-      const signerAddress =
-        await signer.getAddress();
-
-      // Kiểm tra đúng account
-      if (
-        signerAddress.toLowerCase() !==
-        account.toLowerCase()
-      ) {
-        alert(
-          "Ví MetaMask đã thay đổi."
-        );
-        return;
-      }
-
-      // =====================================
-      // MARKETPLACE CONTRACT
-      // =====================================
-
-      const marketplace =
-        new Contract(
-          MARKETPLACE_ADDRESS,
-          MARKETPLACE_ABI,
-          signer
-        );
-
-      // =====================================
-      // LOAD LISTING 1 LẦN
-      // =====================================
-
-      const allListings =
-        await loadAllListings(
-          marketplace
-        );
-
-      // =====================================
-      // TÌM LISTING MỚI NHẤT
-      // =====================================
-
-      const latestListing =
-        findLatestListing(
-          allListings,
-          item.tokenId
-        );
-
-      if (!latestListing) {
-        alert(
-          "NFT này chưa từng được đăng bán."
+          `Đã hủy đăng bán "${item.name}".`
         );
 
         await loadMyItems();
 
-        return;
-      }
+      } catch (error: any) {
 
-      console.log(
-        "Cancel latest listing:",
-        latestListing
-      );
-
-      // =====================================
-      // KIỂM TRA ACTIVE
-      // =====================================
-
-      if (!latestListing.active) {
-        alert(
-          "NFT này hiện không được đăng bán."
+        console.error(
+          "Lỗi hủy đăng bán:",
+          error
         );
 
-        await loadMyItems();
+        if (
+          error?.code ===
+          "ACTION_REJECTED"
+        ) {
+          alert(
+            "Bạn đã từ chối giao dịch."
+          );
+        } else {
+          alert(
+            "Không thể hủy đăng bán."
+          );
+        }
 
-        return;
+      } finally {
+
+        setCancellingId(null);
+
       }
-
-      // =====================================
-      // KIỂM TRA SELLER
-      // =====================================
-
-      if (
-        latestListing.seller.toLowerCase() !==
-        account.toLowerCase()
-      ) {
-        alert(
-          "Bạn không phải người đăng bán NFT này."
-        );
-
-        return;
-      }
-
-      // =====================================
-      // CANCEL LISTING
-      // =====================================
-
-      const tx =
-        await marketplace.cancelListing(
-          latestListing.listingId
-        );
-
-      console.log(
-        "Cancel transaction:",
-        tx.hash
-      );
-
-      await tx.wait();
-
-      alert(
-        `Đã hủy bán ${item.name}!`
-      );
-
-      // =====================================
-      // LOAD LẠI MY ITEMS
-      // =====================================
-
-      await loadMyItems();
-
-    } catch (error) {
-      console.error(
-        "Cancel listing error:",
-        error
-      );
-
-      alert(
-        "Không thể hủy listing."
-      );
-
-    } finally {
-      setCancellingId(null);
-    }
-  };
+    };
 
   // =====================================
-  // CHƯA CONNECT WALLET
+  // CHƯA CONNECT
   // =====================================
 
   if (!account) {
     return (
       <div className="page-container">
 
+        <span className="small-title">
+          KHO VẬT PHẨM
+        </span>
+
         <h1>
-          My Game Items
+          Vật phẩm của tôi
         </h1>
 
         <div className="empty-state">
 
-          <div>
-            👛
-          </div>
+          <div>👛</div>
 
           <h2>
-            Wallet not connected
+            Chưa kết nối ví
           </h2>
 
           <p>
-            Connect MetaMask to view
-            your NFTs.
+            Hãy kết nối MetaMask để
+            xem NFT bạn đang sở hữu.
           </p>
 
         </div>
@@ -451,11 +717,11 @@ function MyItems({ account }: Props) {
       <div className="page-container">
 
         <h1>
-          My Game Items
+          Vật phẩm của tôi
         </h1>
 
         <p>
-          Reading blockchain...
+          Đang đọc dữ liệu blockchain...
         </p>
 
       </div>
@@ -463,23 +729,23 @@ function MyItems({ account }: Props) {
   }
 
   // =====================================
-  // GIAO DIỆN
+  // UI
   // =====================================
 
   return (
     <div className="page-container">
 
       <span className="small-title">
-        INVENTORY
+        KHO VẬT PHẨM
       </span>
 
       <h1>
-        My Game Items
+        Vật phẩm của tôi
       </h1>
 
       <p className="page-description">
 
-        Owned by{" "}
+        Chủ sở hữu:{" "}
 
         <strong>
           {account.slice(0, 6)}
@@ -491,32 +757,22 @@ function MyItems({ account }: Props) {
 
       {myItems.length === 0 ? (
 
-        // =================================
-        // KHÔNG CÓ NFT
-        // =================================
-
         <div className="empty-state">
 
-          <div>
-            🎒
-          </div>
+          <div>🎒</div>
 
           <h2>
-            No NFTs owned
+            Chưa có vật phẩm
           </h2>
 
           <p>
-            Buy an item from the marketplace
-            to see it here.
+            Hãy mua một vật phẩm trên
+            Marketplace hoặc tạo NFT mới.
           </p>
 
         </div>
 
       ) : (
-
-        // =================================
-        // DANH SÁCH NFT
-        // =================================
 
         <div className="market-grid">
 
@@ -527,10 +783,6 @@ function MyItems({ account }: Props) {
                 className="game-card"
                 key={item.id}
               >
-
-                {/* ======================= */}
-                {/* IMAGE */}
-                {/* ======================= */}
 
                 <div className="image-container">
 
@@ -547,22 +799,20 @@ function MyItems({ account }: Props) {
                       ).toLowerCase()
                     }`}
                   >
-                    {
+                    {translateRarity(
                       item.rarity ||
                       "Common"
-                    }
+                    )}
                   </span>
 
                 </div>
 
-                {/* ======================= */}
-                {/* CONTENT */}
-                {/* ======================= */}
-
                 <div className="card-content">
 
                   <div className="category">
-                    {item.category}
+                    {translateCategory(
+                      item.category
+                    )}
                   </div>
 
                   <h3>
@@ -577,20 +827,21 @@ function MyItems({ account }: Props) {
                     Token #{item.tokenId}
                   </div>
 
-                  {/* ===================== */}
-                  {/* FOR SALE */}
-                  {/* ===================== */}
-
                   {item.isForSale ? (
+
+                    // =====================
+                    // ĐANG BÁN
+                    // =====================
 
                     <div className="inventory-status">
 
                       <div className="for-sale-badge">
-                        ● FOR SALE
+                        ● ĐANG BÁN
                       </div>
 
                       <strong>
-                        {item.blockchainPrice} ETH
+                        {item.blockchainPrice}
+                        {" "}ETH
                       </strong>
 
                       <div className="token">
@@ -612,14 +863,10 @@ function MyItems({ account }: Props) {
                           )
                         }
                       >
-
-                        {
-                          cancellingId ===
-                          item.id
-                            ? "Cancelling..."
-                            : "Cancel Listing"
-                        }
-
+                        {cancellingId ===
+                        item.id
+                          ? "Đang hủy..."
+                          : "Hủy đăng bán"}
                       </button>
 
                     </div>
@@ -627,21 +874,77 @@ function MyItems({ account }: Props) {
                   ) : (
 
                     // =====================
-                    // OWNED - CHƯA BÁN
+                    // ĐANG SỞ HỮU
                     // =====================
 
                     <div className="inventory-status">
 
                       <div className="owned-badge">
-                        ✓ OWNED
+                        ✓ ĐANG SỞ HỮU
                       </div>
 
-                      <a
-                        href="/sell"
-                        className="sell-link"
-                      >
-                        Sell Item
-                      </a>
+                      <div className="resell-box">
+
+                        <label>
+                          Giá bán lại
+                        </label>
+
+                        <div className="resell-price-input">
+
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="0.50"
+
+                            value={
+                              resalePrices[
+                                item.id
+                              ] || ""
+                            }
+
+                            onChange={(e) =>
+                              setResalePrices(
+                                (
+                                  current
+                                ) => ({
+                                  ...current,
+
+                                  [item.id]:
+                                    e.target
+                                      .value
+                                })
+                              )
+                            }
+                          />
+
+                          <span>
+                            ETH
+                          </span>
+
+                        </div>
+
+                        <button
+                          className="resell-button"
+
+                          disabled={
+                            sellingId ===
+                            item.id
+                          }
+
+                          onClick={() =>
+                            resellItem(
+                              item
+                            )
+                          }
+                        >
+                          {sellingId ===
+                          item.id
+                            ? "Đang đăng bán..."
+                            : "🔄 Đăng bán lại"}
+                        </button>
+
+                      </div>
 
                     </div>
 
